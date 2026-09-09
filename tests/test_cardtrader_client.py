@@ -1,9 +1,15 @@
+import json
 from unittest.mock import Mock, patch
 
 import pytest
 import requests
 
-from api.cardtrader import CardTraderAuthError, CardTraderClient, CardTraderError
+from api.cardtrader import (
+    CardTraderAuthError,
+    CardTraderClient,
+    CardTraderError,
+    build_blueprint_index,
+)
 
 
 def test_init_reads_token_from_env(monkeypatch):
@@ -79,3 +85,44 @@ def test_get_expansions_raises_on_server_error(mock_get, monkeypatch):
     client = CardTraderClient()
     with pytest.raises(CardTraderError):
         client.get_expansions()
+
+
+@patch("api.cardtrader.requests.get")
+def test_export_blueprints_returns_json(mock_get, monkeypatch):
+    monkeypatch.setenv("CARDTRADER_API_TOKEN", "il-mio-token")
+    payload = [{"id": 10, "name": "Lightning Bolt", "expansion_id": 1}]
+    mock_get.return_value = Mock(status_code=200, json=lambda: payload)
+
+    client = CardTraderClient()
+    blueprints = client.export_blueprints(1)
+
+    assert blueprints == payload
+    called_url = mock_get.call_args.args[0]
+    assert called_url.endswith("/blueprints/export?expansion_id=1")
+
+
+def test_build_blueprint_index_groups_by_lowercase_name(tmp_path, monkeypatch):
+    monkeypatch.setenv("CARDTRADER_API_TOKEN", "il-mio-token")
+    client = CardTraderClient()
+    client.get_expansions = Mock(
+        return_value=[{"id": 1, "game_id": 1, "name": "Alpha"}]
+    )
+    client.export_blueprints = Mock(
+        return_value=[
+            {"id": 100, "name": "Lightning Bolt", "expansion_id": 1},
+            {"id": 101, "name": "lightning bolt", "expansion_id": 1},
+        ]
+    )
+
+    index_path = tmp_path / "blueprints_index.json"
+    index = build_blueprint_index(client, path=str(index_path))
+
+    expected = {
+        "lightning bolt": [
+            {"id": 100, "name": "Lightning Bolt", "expansion_id": 1},
+            {"id": 101, "name": "lightning bolt", "expansion_id": 1},
+        ]
+    }
+    assert index == expected
+    client.export_blueprints.assert_called_once_with(1)
+    assert json.loads(index_path.read_text(encoding="utf-8")) == expected

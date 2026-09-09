@@ -4,6 +4,7 @@ Verra' implementato compito per compito: validazione token (/info),
 espansioni, export blueprint, marketplace/products con rate limit.
 """
 
+import json
 import os
 
 import requests
@@ -59,3 +60,33 @@ class CardTraderClient:
         """Recupera le espansioni Magic (game_id == 1) da GET /expansions."""
         expansions = self._get("/expansions")
         return [e for e in expansions if e.get("game_id") == MAGIC_GAME_ID]
+
+    def export_blueprints(self, expansion_id: int) -> list:
+        """Recupera i blueprint di un'espansione (GET /blueprints/export)."""
+        return self._get(f"/blueprints/export?expansion_id={expansion_id}")
+
+
+def build_blueprint_index(
+    client: CardTraderClient, path: str = "blueprints_index.json"
+) -> dict:
+    """Costruisce l'indice locale dei blueprint Magic e lo salva su file.
+
+    Itera le espansioni Magic, recupera i blueprint di ciascuna con
+    ``export_blueprints`` e produce un dizionario
+    ``{"nome carta minuscolo": [{id, name, expansion_id}, ...]}``.
+    """
+    index: dict[str, list[dict]] = {}
+    for expansion in client.get_expansions():
+        expansion_id = expansion["id"]
+        for blueprint in client.export_blueprints(expansion_id):
+            entry = {
+                "id": blueprint["id"],
+                "name": blueprint["name"],
+                "expansion_id": expansion_id,
+            }
+            index.setdefault(blueprint["name"].lower(), []).append(entry)
+
+    with open(path, "w", encoding="utf-8") as index_file:
+        json.dump(index, index_file, ensure_ascii=False, indent=2)
+
+    return index

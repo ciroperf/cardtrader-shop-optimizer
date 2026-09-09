@@ -30,8 +30,18 @@ Il token si genera dalla sezione sviluppatori del proprio account
 CardTrader e non va mai committato nel repo.
 
 `api/cardtrader.py` espone `CardTraderClient`, che legge il token da
-`CARDTRADER_API_TOKEN` e lo usa per validare l'account (`get_info()`)
-e recuperare le espansioni Magic (`get_expansions()`).
+`CARDTRADER_API_TOKEN` e lo usa per validare l'account (`get_info()`),
+recuperare le espansioni Magic (`get_expansions()`) ed esportarne i
+blueprint (`export_blueprints(expansion_id)`). `build_blueprint_index()`
+itera tutte le espansioni Magic e salva un indice locale
+`blueprints_index.json` (`{"nome carta minuscolo": [{id, name,
+expansion_id}, ...]}`) usato in seguito per il fuzzy matching.
+
+`api/moxfield.py` espone `parse_decklist(text)`, che converte una
+decklist testuale incollata dall'utente (es. da Moxfield) in una lista
+di coppie `(nome carta, quantita')`, ignorando righe vuote o di
+commento (`//`, `#`) e ripulendo i link in stile markdown
+(`[Nome](url)` -> `Nome`).
 
 ## Test
 

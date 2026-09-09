@@ -1,4 +1,5 @@
 import json
+import time
 from unittest.mock import Mock, patch
 
 import pytest
@@ -8,6 +9,7 @@ from api.cardtrader import (
     CardTraderAuthError,
     CardTraderClient,
     CardTraderError,
+    RateLimiter,
     build_blueprint_index,
 )
 
@@ -126,3 +128,57 @@ def test_build_blueprint_index_groups_by_lowercase_name(tmp_path, monkeypatch):
     assert index == expected
     client.export_blueprints.assert_called_once_with(1)
     assert json.loads(index_path.read_text(encoding="utf-8")) == expected
+
+
+@patch("api.cardtrader._marketplace_rate_limiter.acquire")
+@patch("api.cardtrader.requests.get")
+def test_get_marketplace_products_returns_list(mock_get, mock_acquire, monkeypatch):
+    monkeypatch.setenv("CARDTRADER_API_TOKEN", "il-mio-token")
+    payload = [{"id": 1, "blueprint_id": 42, "can_sell_via_hub": True}]
+    mock_get.return_value = Mock(status_code=200, json=lambda: payload)
+
+    client = CardTraderClient()
+    listings = client.get_marketplace_products(42)
+
+    assert listings == payload
+    called_url = mock_get.call_args.args[0]
+    assert called_url.endswith("/marketplace/products?blueprint_id=42")
+    mock_acquire.assert_called_once()
+
+
+@patch("api.cardtrader._marketplace_rate_limiter.acquire")
+@patch("api.cardtrader.requests.get")
+def test_get_marketplace_products_unwraps_dict_response(
+    mock_get, mock_acquire, monkeypatch
+):
+    monkeypatch.setenv("CARDTRADER_API_TOKEN", "il-mio-token")
+    payload = {"42": [{"id": 1, "blueprint_id": 42, "can_sell_via_hub": True}]}
+    mock_get.return_value = Mock(status_code=200, json=lambda: payload)
+
+    client = CardTraderClient()
+    listings = client.get_marketplace_products(42)
+
+    assert listings == payload["42"]
+
+
+def test_rate_limiter_throttles_calls_over_the_limit():
+    limiter = RateLimiter(max_calls=3, period=0.3)
+
+    start = time.monotonic()
+    for _ in range(4):
+        limiter.acquire()
+    elapsed = time.monotonic() - start
+
+    # La quarta chiamata deve aspettare che la prima esca dalla finestra.
+    assert elapsed >= 0.3
+
+
+def test_rate_limiter_does_not_throttle_under_the_limit():
+    limiter = RateLimiter(max_calls=10, period=1.0)
+
+    start = time.monotonic()
+    for _ in range(5):
+        limiter.acquire()
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 1.0

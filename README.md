@@ -36,6 +36,17 @@ blueprint (`export_blueprints(expansion_id)`). `build_blueprint_index()`
 itera tutte le espansioni Magic e salva un indice locale
 `blueprints_index.json` (`{"nome carta minuscolo": [{id, name,
 expansion_id}, ...]}`) usato in seguito per il fuzzy matching.
+`get_marketplace_products(blueprint_id)` recupera i listing di mercato
+di un blueprint, rispettando un rate limit di 10 richieste/secondo
+(`RateLimiter`, sliding window condivisa tra tutte le istanze del
+client).
+
+`core/analyzer.py` espone `filter_listings(listings, language,
+min_condition, foil)`, che scarta i listing senza `can_sell_via_hub`,
+con lingua/foil diversi da quelli richiesti o con condizione peggiore
+di `min_condition` (scala `CONDITION_RANK`, da `Mint` a `Poor`), e
+restituisce `(listing_filtrati, best_listing)` col listing piu'
+economico tra quelli rimasti.
 
 `api/moxfield.py` espone `parse_decklist(text)`, che converte una
 decklist testuale incollata dall'utente (es. da Moxfield) in una lista

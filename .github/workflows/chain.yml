@@ -1,0 +1,153 @@
+# ============================================================
+#  CHAIN — da copiare in .github/workflows/ di ogni repo di progetto.
+#
+#  Toglie la burocrazia fra un compito e il successivo:
+#    1. la CI passa su un branch agent/*  -> mergia la PR
+#    2. la PR viene mergiata (da te o da qui) -> sblocca il compito dopo
+#    3. finiti i compiti -> avvisa il portfolio che il progetto e' pronto
+#
+#  Nessun modello coinvolto: e' tutta bash. Il giudizio resta tuo, se lo
+#  vuoi: metti AUTO_MERGE a "false" e la catena riparte comunque, ma solo
+#  dopo che hai mergiato con le tue mani.
+#
+#  Segreto richiesto: OFFICINA_CHAIN_TOKEN — un PAT fine-grained con
+#  Issues, Pull requests, Contents e Actions in scrittura.
+#  Non basta il GITHUB_TOKEN di Actions: un'etichetta messa da lui NON
+#  sveglia il Builder, perche' GitHub non fa scatenare workflow dagli
+#  eventi prodotti dal proprio token. E' la regola che spezza ogni catena
+#  fatta in casa, ed e' il motivo per cui qui serve un PAT.
+# ============================================================
+
+name: chain
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  pull_request:
+    types: [closed]
+  # Scialuppa: se la promozione si e' persa per qualsiasi motivo, questa
+  # rimette in moto la coda senza doverti ricordare quale etichetta va dove.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # ---------------- CONFIGURAZIONE ----------------
+  AUTO_MERGE: "true"                  # "false" = mergi tu, il resto continua
+  PORTFOLIO_REPO: ciroperf/portfolio  # dove vive il Publisher
+  # ------------------------------------------------
+
+jobs:
+  # --------------------------------------------------------------------
+  # 1. CI verde su un branch dell'agente -> mergia.
+  # --------------------------------------------------------------------
+  merge:
+    if: >-
+      github.event_name == 'workflow_run'
+      && github.event.workflow_run.conclusion == 'success'
+      && startsWith(github.event.workflow_run.head_branch, 'agent/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mergia la PR se i test sono verdi
+        env:
+          GH_TOKEN: ${{ secrets.OFFICINA_CHAIN_TOKEN }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+
+          if [ "${AUTO_MERGE}" != "true" ]; then
+            echo "AUTO_MERGE disattivato: la PR su \`$BRANCH\` aspetta te." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::Manca OFFICINA_CHAIN_TOKEN: mergia a mano."
+            exit 0
+          fi
+
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" \
+                 --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            echo "Nessuna PR aperta per \`$BRANCH\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch
+          echo "PR #$pr mergiata: i test erano verdi." >> "$GITHUB_STEP_SUMMARY"
+
+  # --------------------------------------------------------------------
+  # 2. PR mergiata -> sblocca il compito successivo, o chiudi il progetto.
+  #    Gira anche quando il merge lo fai tu a mano.
+  # --------------------------------------------------------------------
+  promote:
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request'
+          && github.event.pull_request.merged == true
+          && startsWith(github.event.pull_request.head.ref, 'agent/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sblocca il compito successivo
+        env:
+          GH_TOKEN: ${{ secrets.OFFICINA_CHAIN_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::Manca OFFICINA_CHAIN_TOKEN: sposta l'etichetta a mano."
+            exit 0
+          fi
+
+          # Se un compito e' gia' in lavorazione, non se ne sblocca un altro.
+          #
+          # C'e' una corsa da gestire: la PR appena mergiata contiene
+          # "Closes #N", e GitHub chiude quella issue in modo asincrono
+          # rispetto all'evento che ha svegliato questo job. Se guardiamo
+          # troppo presto vediamo ancora aperto il compito che si e' appena
+          # concluso, decidiamo che c'e' lavoro in corso, e la catena si
+          # ferma per sempre — senza errori, il che e' il modo peggiore di
+          # fermarsi. Quindi aspettiamo che il conto si assesti.
+          attivi=1
+          for _ in 1 2 3 4 5 6; do
+            attivi=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+                       --label "agent:build" --state open --json number --jq 'length')
+            [ "$attivi" -eq 0 ] && break
+            sleep 5
+          done
+          if [ "$attivi" -gt 0 ]; then
+            echo "C'e' gia' un compito in lavorazione dopo 30s di attesa. Nulla da sbloccare." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Il prossimo in coda e' il piu' vecchio: l'Architect li ha creati in ordine.
+          next=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "agent:queued" \
+                   --state open --json number --jq 'sort_by(.number) | .[0].number // empty')
+
+          if [ -n "$next" ]; then
+            gh issue edit "$next" --repo "$GITHUB_REPOSITORY" \
+              --remove-label "agent:queued" --add-label "agent:build"
+            echo "### Compito sbloccato" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Issue #$next passa a \`agent:build\`: il Builder parte fra poco." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # ---- niente piu' compiti: il progetto e' finito ------------------
+          echo "### Progetto completato" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          slug="${GITHUB_REPOSITORY##*/}"
+          title=$(gh repo view "$GITHUB_REPOSITORY" --json description --jq '.description // ""')
+          [ -n "$title" ] || title="$slug"
+
+          if gh api "repos/${PORTFOLIO_REPO}/dispatches" \
+               -f event_type=publish-project \
+               -F "client_payload[slug]=$slug" \
+               -F "client_payload[title]=$title" \
+               -F "client_payload[repo]=$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Publisher avvisato: preparera' la PR sul portfolio." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Non sono riuscito ad avvisare ${PORTFOLIO_REPO}. Lancia il Publisher a mano."
+          fi

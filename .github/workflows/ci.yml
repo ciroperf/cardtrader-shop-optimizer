@@ -1,0 +1,121 @@
+# ============================================================
+#  CI — seminato in ogni repo di progetto dall'Architect (in bash,
+#  non dall'AI: un file che serve sempre non puo' dipendere dal fatto
+#  che un modello si ricordi di scriverlo).
+#
+#  Deve chiamarsi "ci": chain.yml si aggancia a questo nome per
+#  decidere se una PR dell'agente puo' essere mergiata da sola.
+#
+#  Riconosce lo stack da solo e non fallisce mai per assenza di
+#  qualcosa: uno scheletro appena creato passa, un progetto con i test
+#  rotti no. L'Architect puo' sovrascrivere questo file con una CI
+#  piu' precisa per il suo stack: se lo fa, vince la sua.
+# ============================================================
+
+name: ci
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Riconosci lo stack
+        id: stack
+        run: |
+          set -euo pipefail
+          if [ -f package.json ]; then
+            echo "kind=node" >> "$GITHUB_OUTPUT"
+            # La cache di setup-node vuole un lockfile e va in errore se non
+            # lo trova. Un repo appena impostato dall'Architect non ce l'ha
+            # ancora: qui la cache si accende solo quando c'e' davvero.
+            if [ -f package-lock.json ]; then
+              echo "npm_cache=npm" >> "$GITHUB_OUTPUT"
+            else
+              echo "npm_cache=" >> "$GITHUB_OUTPUT"
+            fi
+          elif ls *.sln **/*.csproj >/dev/null 2>&1; then
+            echo "kind=dotnet" >> "$GITHUB_OUTPUT"
+          elif [ -f pubspec.yaml ]; then
+            echo "kind=flutter" >> "$GITHUB_OUTPUT"
+          elif [ -f pyproject.toml ] || [ -f requirements.txt ]; then
+            echo "kind=python" >> "$GITHUB_OUTPUT"
+          else
+            echo "kind=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ---------------- Node / React ----------------
+      - uses: actions/setup-node@v4
+        if: steps.stack.outputs.kind == 'node'
+        with:
+          node-version: 22
+          cache: ${{ steps.stack.outputs.npm_cache }}
+
+      - name: Node — install, build, test
+        if: steps.stack.outputs.kind == 'node'
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run --if-present build
+          # CI=true tiene i runner (vitest, jest) fuori dalla modalita' watch.
+          npm test --if-present
+        env:
+          CI: "true"
+
+      # ---------------- .NET ----------------
+      - uses: actions/setup-dotnet@v4
+        if: steps.stack.outputs.kind == 'dotnet'
+        with:
+          dotnet-version: '9.x'
+
+      - name: .NET — build e test
+        if: steps.stack.outputs.kind == 'dotnet'
+        run: |
+          set -euo pipefail
+          dotnet build --nologo
+          dotnet test --nologo --no-build
+
+      # ---------------- Flutter ----------------
+      - uses: subosito/flutter-action@v2
+        if: steps.stack.outputs.kind == 'flutter'
+        with:
+          channel: stable
+
+      - name: Flutter — analyze e test
+        if: steps.stack.outputs.kind == 'flutter'
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      # ---------------- Python ----------------
+      - uses: actions/setup-python@v5
+        if: steps.stack.outputs.kind == 'python'
+        with:
+          python-version: '3.12'
+
+      - name: Python — install e test
+        if: steps.stack.outputs.kind == 'python'
+        run: |
+          set -euo pipefail
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e . 2>/dev/null || true; fi
+          pip install pytest
+          pytest -q || [ $? -eq 5 ]   # 5 = nessun test raccolto: non e' un errore
+
+      # ---------------- Niente da fare ----------------
+      - name: Nessuno stack riconosciuto
+        if: steps.stack.outputs.kind == 'none'
+        run: |
+          echo "Ancora nessun progetto in questo repo: niente da verificare." \
+            >> "$GITHUB_STEP_SUMMARY"

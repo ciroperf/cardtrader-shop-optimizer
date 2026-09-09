@@ -1,0 +1,51 @@
+# ============================================================
+#  Base .gitignore per i repo di progetto creati dall'Architect.
+#  L'Architect ci aggiunge sopra le righe dello stack scelto
+#  (es. .next/ per Next.js, bin/ obj/ per .NET, build/ per Flutter).
+#  Va copiato come ".gitignore" nella radice del nuovo repo.
+# ============================================================
+
+# --- segreti ---------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+appsettings.Development.json
+local.settings.json
+
+# --- Claude Code -----------------------------------------------
+.claude/settings.local.json
+
+# --- dipendenze e build ----------------------------------------
+node_modules/
+dist/
+build/
+out/
+.next/
+.nuxt/
+.svelte-kit/
+coverage/
+bin/
+obj/
+target/
+__pycache__/
+*.py[cod]
+.venv/
+
+# --- editor ----------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# --- sistema operativo -----------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- log e temporanei ------------------------------------------
+*.log
+*.tmp
+npm-debug.log*
+yarn-error.log*

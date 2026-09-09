@@ -60,6 +60,10 @@ class CardTraderAuthError(CardTraderError):
     """Token API mancante o non valido (401)."""
 
 
+class CardTraderRejectedError(CardTraderError):
+    """Il listing richiesto non e' piu' disponibile (422)."""
+
+
 class CardTraderClient:
     """Client per le API v2 di CardTrader."""
 
@@ -85,6 +89,31 @@ class CardTraderClient:
 
         if response.status_code == 401:
             raise CardTraderAuthError("Token API non valido o scaduto (401).")
+        if response.status_code >= 400:
+            raise CardTraderError(
+                f"Richiesta a {path} fallita con status {response.status_code}."
+            )
+        return response.json()
+
+    def _post(self, path: str, payload: dict):
+        url = f"{BASE_URL}{path}"
+        try:
+            response = requests.post(
+                url, headers=self._headers, json=payload, timeout=self._timeout
+            )
+        except requests.Timeout as exc:
+            raise CardTraderError(f"Timeout durante la richiesta a {path}.") from exc
+        except requests.RequestException as exc:
+            raise CardTraderError(
+                f"Errore di rete durante la richiesta a {path}."
+            ) from exc
+
+        if response.status_code == 401:
+            raise CardTraderAuthError("Token API non valido o scaduto (401).")
+        if response.status_code == 422:
+            raise CardTraderRejectedError(
+                f"Listing non piu' disponibile per la richiesta a {path} (422)."
+            )
         if response.status_code >= 400:
             raise CardTraderError(
                 f"Richiesta a {path} fallita con status {response.status_code}."
@@ -117,6 +146,21 @@ class CardTraderClient:
         if isinstance(data, dict):
             return data.get(str(blueprint_id), [])
         return data
+
+    def add_to_cart(self, product_id: int, quantity: int) -> dict:
+        """Aggiunge un listing al carrello (POST /cart/add).
+
+        Solleva ``CardTraderRejectedError`` se il listing non e' piu'
+        disponibile (422), cosi' il chiamante puo' cercarne un'alternativa.
+        """
+        return self._post(
+            "/cart/add",
+            {
+                "product_id": product_id,
+                "quantity": quantity,
+                "via_cardtrader_zero": True,
+            },
+        )
 
 
 def build_blueprint_index(

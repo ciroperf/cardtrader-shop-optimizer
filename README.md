@@ -39,7 +39,9 @@ expansion_id}, ...]}`) usato in seguito per il fuzzy matching.
 `get_marketplace_products(blueprint_id)` recupera i listing di mercato
 di un blueprint, rispettando un rate limit di 10 richieste/secondo
 (`RateLimiter`, sliding window condivisa tra tutte le istanze del
-client).
+client). `add_to_cart(product_id, quantity)` aggiunge un listing al
+carrello (`POST /cart/add`) e solleva `CardTraderRejectedError` se il
+listing non e' piu' disponibile (422).
 
 `core/analyzer.py` espone `filter_listings(listings, language,
 min_condition, foil)`, che scarta i listing senza `can_sell_via_hub`,
@@ -79,8 +81,15 @@ il piano con `optimize` in un thread separato (per non bloccare la
 UI), mostrando il risultato raggruppato per venditore in una tabella
 con il totale. Se `CARDTRADER_API_TOKEN` manca o non e' valido
 (verificato con `get_info()` all'avvio), viene mostrato un messaggio
-d'errore e la risoluzione resta disabilitata. La gestione del
-carrello non e' ancora inclusa.
+d'errore e la risoluzione resta disabilitata. Il piano non viene ancora
+inviato automaticamente al carrello dalla GUI: `cart_manager_screen.py`
+espone la funzione `checkout(plan, blueprint_index, all_listings)`, che
+itera le carte del piano prodotto da `optimize` e le aggiunge al
+carrello con `add_to_cart`. Se l'API rifiuta un listing (422), cerca
+un'alternativa in `all_listings` (stessa lingua/condizione/foil del
+listing rifiutato, poi degradando il vincolo) escludendo i product_id
+gia' falliti, riprovando fino a 10 volte per carta prima di segnalare
+la carta come fallita. Ogni tentativo e sostituzione viene loggato.
 
 ## Test
 

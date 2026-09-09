@@ -69,12 +69,30 @@ assoluto di non piu' di `overprice_threshold`, altrimenti sceglie il
 venditore col prezzo minimo assoluto. Restituisce `{"sellers":
 {seller_id: [(nome_carta, listing), ...]}, "total_cents": int}`.
 
+`main.py` mette in fila i moduli sopra in una GUI a step (tema
+`darkly`): (1) incolla la decklist in una textbox, (2) il pulsante
+"Risolvi" chiama `parse_decklist` + `resolve` su ogni riga e mostra le
+carte non trovate in una lista, (3) un form imposta lingua, condizione
+minima e foil, (4) il pulsante "Analizza" recupera i listing di
+mercato per le carte risolte, li filtra con `filter_listings` e calcola
+il piano con `optimize` in un thread separato (per non bloccare la
+UI), mostrando il risultato raggruppato per venditore in una tabella
+con il totale. Se `CARDTRADER_API_TOKEN` manca o non e' valido
+(verificato con `get_info()` all'avvio), viene mostrato un messaggio
+d'errore e la risoluzione resta disabilitata. La gestione del
+carrello non e' ancora inclusa.
+
 ## Test
 
 ```bash
 pip install -r requirements.txt
 pytest
 ```
+
+I test di `main.py` istanziano la finestra in modalita' headless
+(`Tk().withdraw()`) e vengono saltati automaticamente se non c'e' un
+display disponibile (es. CI senza Xvfb). Per eseguirli con un display
+virtuale su Linux: `xvfb-run -a pytest`.
 
 ## Screenshot
 

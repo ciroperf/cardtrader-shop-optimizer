@@ -22,8 +22,33 @@ def test_init_reads_token_from_env(monkeypatch):
 
 def test_init_without_token_raises(monkeypatch):
     monkeypatch.delenv("CARDTRADER_API_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "api.cardtrader.ENV_FILE_PATH", "/percorso/inesistente/.env"
+    )
     with pytest.raises(CardTraderAuthError):
         CardTraderClient()
+
+
+def test_init_reads_token_from_dotenv_file(monkeypatch, tmp_path):
+    monkeypatch.delenv("CARDTRADER_API_TOKEN", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("CARDTRADER_API_TOKEN=token-da-dotenv\n")
+    monkeypatch.setattr("api.cardtrader.ENV_FILE_PATH", env_file)
+
+    client = CardTraderClient()
+
+    assert client._headers["Authorization"] == "Bearer token-da-dotenv"
+
+
+def test_env_var_has_priority_over_dotenv_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("CARDTRADER_API_TOKEN", "token-da-ambiente")
+    env_file = tmp_path / ".env"
+    env_file.write_text("CARDTRADER_API_TOKEN=token-da-dotenv\n")
+    monkeypatch.setattr("api.cardtrader.ENV_FILE_PATH", env_file)
+
+    client = CardTraderClient()
+
+    assert client._headers["Authorization"] == "Bearer token-da-ambiente"
 
 
 @patch("api.cardtrader.requests.get")

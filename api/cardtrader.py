@@ -9,12 +9,36 @@ import os
 import threading
 import time
 from collections import deque
+from pathlib import Path
 
 import requests
 
 BASE_URL = "https://api.cardtrader.com/api/v2"
 MAGIC_GAME_ID = 1
 MARKETPLACE_PRODUCTS_RATE_LIMIT = 10  # richieste/secondo, imposto da CardTrader
+ENV_FILE_PATH = Path(__file__).resolve().parent.parent / ".env"
+
+
+def _load_dotenv() -> None:
+    """Carica le variabili da un file ``.env`` locale (se presente).
+
+    Non sovrascrive variabili gia' impostate nell'ambiente: l'ambiente
+    reale ha sempre priorita' sul file.
+    """
+    try:
+        lines = Path(ENV_FILE_PATH).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 class RateLimiter:
@@ -68,6 +92,7 @@ class CardTraderClient:
     """Client per le API v2 di CardTrader."""
 
     def __init__(self, token: str | None = None, timeout: float = 10.0) -> None:
+        _load_dotenv()
         token = token or os.environ.get("CARDTRADER_API_TOKEN")
         if not token:
             raise CardTraderAuthError(

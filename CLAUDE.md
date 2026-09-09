@@ -10,7 +10,8 @@ Questo file viene letto a ogni run dell'agente. Tienilo sotto le 40 righe.
 - Python 3.10+, GUI tkinter + ttkbootstrap (tema darkly)
 - requests per le API v2 di CardTrader, rapidfuzz per il fuzzy matching
 - Test: `pytest`
-- Avvio locale: `python main.py` (richiede `CARDTRADER_API_TOKEN` nell'ambiente)
+- Avvio locale: `python main.py` (richiede `CARDTRADER_API_TOKEN`
+  nell'ambiente o in un file `.env` locale, mai committato)
 
 ## Regole
 

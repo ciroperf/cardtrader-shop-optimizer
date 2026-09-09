@@ -22,15 +22,21 @@ mazzo su CardTrader invece di prenderle una per una a occhio.
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-export CARDTRADER_API_TOKEN=il-tuo-personal-access-token
+cp .env.example .env   # poi modifica .env con il tuo token
 python main.py
 ```
 
+In alternativa a `.env` puoi esportare la variabile direttamente:
+`export CARDTRADER_API_TOKEN=il-tuo-personal-access-token`.
+
 Il token si genera dalla sezione sviluppatori del proprio account
-CardTrader e non va mai committato nel repo.
+CardTrader e non va mai committato nel repo (`.env` e' in `.gitignore`).
 
 `api/cardtrader.py` espone `CardTraderClient`, che legge il token da
-`CARDTRADER_API_TOKEN` e lo usa per validare l'account (`get_info()`),
+`CARDTRADER_API_TOKEN` (impostata nell'ambiente o in un file `.env`
+nella radice del progetto, caricato automaticamente senza sovrascrivere
+variabili gia' presenti nell'ambiente) e lo usa per validare l'account
+(`get_info()`),
 recuperare le espansioni Magic (`get_expansions()`) ed esportarne i
 blueprint (`export_blueprints(expansion_id)`). `build_blueprint_index()`
 itera tutte le espansioni Magic e salva un indice locale

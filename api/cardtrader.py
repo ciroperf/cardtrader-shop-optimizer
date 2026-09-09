@@ -6,11 +6,50 @@ espansioni, export blueprint, marketplace/products con rate limit.
 
 import json
 import os
+import threading
+import time
+from collections import deque
 
 import requests
 
 BASE_URL = "https://api.cardtrader.com/api/v2"
 MAGIC_GAME_ID = 1
+MARKETPLACE_PRODUCTS_RATE_LIMIT = 10  # richieste/secondo, imposto da CardTrader
+
+
+class RateLimiter:
+    """Limita a ``max_calls`` le chiamate concesse in una finestra di ``period`` secondi.
+
+    Sliding window: tiene i timestamp delle chiamate recenti e, se la
+    finestra e' piena, dorme il tempo necessario prima di procedere.
+    Condivisibile tra thread tramite un ``threading.Lock``.
+    """
+
+    def __init__(self, max_calls: int, period: float = 1.0) -> None:
+        self._max_calls = max_calls
+        self._period = period
+        self._lock = threading.Lock()
+        self._timestamps: deque[float] = deque()
+
+    def acquire(self) -> None:
+        with self._lock:
+            self._drop_expired()
+            if len(self._timestamps) >= self._max_calls:
+                sleep_time = self._period - (time.monotonic() - self._timestamps[0])
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                self._drop_expired()
+            self._timestamps.append(time.monotonic())
+
+    def _drop_expired(self) -> None:
+        now = time.monotonic()
+        while self._timestamps and now - self._timestamps[0] >= self._period:
+            self._timestamps.popleft()
+
+
+# Condiviso da tutte le istanze di CardTraderClient: il limite e' imposto
+# dall'API, non dal singolo client.
+_marketplace_rate_limiter = RateLimiter(max_calls=MARKETPLACE_PRODUCTS_RATE_LIMIT)
 
 
 class CardTraderError(Exception):
@@ -64,6 +103,20 @@ class CardTraderClient:
     def export_blueprints(self, expansion_id: int) -> list:
         """Recupera i blueprint di un'espansione (GET /blueprints/export)."""
         return self._get(f"/blueprints/export?expansion_id={expansion_id}")
+
+    def get_marketplace_products(self, blueprint_id: int) -> list:
+        """Recupera i listing di mercato di un blueprint (GET /marketplace/products).
+
+        Rispetta il rate limit di CardTrader (10 richieste/secondo) tramite
+        ``_marketplace_rate_limiter``, condiviso tra tutte le istanze del
+        client. La API risponde con un dizionario ``{blueprint_id: [...]}``:
+        qui viene gia' spacchettato nella lista di listing.
+        """
+        _marketplace_rate_limiter.acquire()
+        data = self._get(f"/marketplace/products?blueprint_id={blueprint_id}")
+        if isinstance(data, dict):
+            return data.get(str(blueprint_id), [])
+        return data
 
 
 def build_blueprint_index(

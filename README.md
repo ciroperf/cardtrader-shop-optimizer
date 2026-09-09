@@ -43,6 +43,13 @@ di coppie `(nome carta, quantita')`, ignorando righe vuote o di
 commento (`//`, `#`) e ripulendo i link in stile markdown
 (`[Nome](url)` -> `Nome`).
 
+`core/resolver.py` espone `resolve(card_name, blueprint_index)`, che
+cerca il nome carta nell'indice locale dei blueprint: prima un match
+esatto case-insensitive, poi un fuzzy match (`rapidfuzz`,
+`score_cutoff=60`) per gestire differenze di formattazione (es.
+`Fire // Ice` vs `Fire/Ice`). Restituisce un `BlueprintInfo` o `None`
+se non trova nessun match sopra soglia.
+
 ## Test
 
 ```bash

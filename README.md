@@ -61,6 +61,14 @@ esatto case-insensitive, poi un fuzzy match (`rapidfuzz`,
 `Fire // Ice` vs `Fire/Ice`). Restituisce un `BlueprintInfo` o `None`
 se non trova nessun match sopra soglia.
 
+`core/optimizer.py` espone `optimize(card_listings, overprice_threshold=0.05)`,
+che calcola il piano di acquisto (greedy): elabora le carte in ordine di
+prezzo minimo crescente e per ognuna preferisce il venditore piu'
+economico gia' scelto nel piano se il suo prezzo supera il minimo
+assoluto di non piu' di `overprice_threshold`, altrimenti sceglie il
+venditore col prezzo minimo assoluto. Restituisce `{"sellers":
+{seller_id: [(nome_carta, listing), ...]}, "total_cents": int}`.
+
 ## Test
 
 ```bash

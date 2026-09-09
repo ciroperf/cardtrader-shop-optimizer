@@ -29,6 +29,10 @@ python main.py
 Il token si genera dalla sezione sviluppatori del proprio account
 CardTrader e non va mai committato nel repo.
 
+`api/cardtrader.py` espone `CardTraderClient`, che legge il token da
+`CARDTRADER_API_TOKEN` e lo usa per validare l'account (`get_info()`)
+e recuperare le espansioni Magic (`get_expansions()`).
+
 ## Test
 
 ```bash
